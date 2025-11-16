@@ -21,54 +21,116 @@ let gamesCacheDate = null;
 app.use(cors());
 app.use(express.json());
 
-async function fetchFitGirlSlugs() {
-  if (fitGirlCache) {
-    return fitGirlCache;
-  }
-  const url = "https://fitgirl-repacks.site/updates-list/";
+async function fetchFitGirlGames(pageNumber = 1) {
+  const url = pageNumber === 1 
+    ? "https://fitgirl-repacks.site/all-my-repacks-a-z/"
+    : `https://fitgirl-repacks.site/all-my-repacks-a-z/?lcp_page0=${pageNumber}`;
+  
   const response = await axios.get(url);
   const html = response.data;
   const $ = cheerio.load(html);
-  const slugs = [];
-  $(".su-spoiler").each((_, spoilerEl) => {
-    const spoiler = $(spoilerEl);
-    const titleEl = spoiler.find(".su-spoiler-title").first();
-    let spoilerTitle = "";
-    if (titleEl && titleEl.length) {
-      const cloned = titleEl.clone();
-      cloned.children().remove();
-      spoilerTitle = cloned.text().trim();
-    }
-
-    let slug = null;
-    spoiler.find("a").each((__, linkEl) => {
-      if (slug) return;
-      const linkText = $(linkEl).text().trim().toLowerCase();
-      const href = $(linkEl).attr("href") || "";
-      if (!href) return;
-      if (!linkText.includes("repack page")) return;
-
-      let cleanedHref = href.trim();
-      const domainMarker = "fitgirl-repacks.site/";
-      const domainIndex = cleanedHref.indexOf(domainMarker);
-      if (domainIndex !== -1) {
-        cleanedHref = cleanedHref.slice(domainIndex + domainMarker.length);
-      }
-      if (cleanedHref.startsWith("/")) {
-        cleanedHref = cleanedHref.slice(1);
-      }
-      const possibleSlug = cleanedHref.split("/")[0];
-      if (possibleSlug) {
-        slug = possibleSlug;
-      }
-    });
-
-    if (slug && !slugs.find((item) => item.slug === slug)) {
-      slugs.push({ slug, spoilerTitle });
+  const games = [];
+  
+  const lcpList = $("#lcp_instance_0 li a, .lcp_catlist li a");
+  
+  lcpList.each((index, el) => {
+    const $link = $(el);
+    const title = $link.text().trim();
+    const link = $link.attr("href");
+    
+    if (title && link) {
+      // Extract slug from URL
+      const urlParts = link.split("/").filter(Boolean);
+      const slug = urlParts[urlParts.length - 1] || title.toLowerCase().replace(/\s+/g, "-");
+      
+      games.push({
+        id: slug,
+        slug: slug,
+        title: title,
+        link: link
+      });
     }
   });
-  fitGirlCache = slugs;
-  return slugs;
+  
+  return games;
+}
+
+async function getTotalPages() {
+  try {
+    const response = await axios.get("https://fitgirl-repacks.site/all-my-repacks-a-z/");
+    const $ = cheerio.load(response.data);
+    
+    let maxPage = 1;
+    
+    // Look for pagination links
+    $(".lcp_paginator a, .pagination a").each((i, el) => {
+      const href = $(el).attr("href");
+      if (href && href.includes("lcp_page0=")) {
+        const match = href.match(/lcp_page0=(\d+)/);
+        if (match) {
+          const pageNum = parseInt(match[1], 10);
+          if (pageNum > maxPage) {
+            maxPage = pageNum;
+          }
+        }
+      }
+    });
+    
+    // Also check for direct page number text
+    $(".lcp_paginator a, .pagination a").each((i, el) => {
+      const text = $(el).text().trim();
+      const pageNum = parseInt(text, 10);
+      if (!isNaN(pageNum) && pageNum > maxPage) {
+        maxPage = pageNum;
+      }
+    });
+    
+    return maxPage;
+  } catch (error) {
+    console.error("Error detecting total pages:", error.message);
+    return 127; // Default fallback
+  }
+}
+
+async function fetchAllFitGirlGames() {
+  if (fitGirlCache) {
+    return fitGirlCache;
+  }
+  
+  const totalPages = await getTotalPages();
+  console.log(`Fetching all games from FitGirl (${totalPages} pages, this may take a while)...`);
+  const allGames = [];
+  const seenSlugs = new Set();
+  
+  for (let page = 1; page <= totalPages; page++) {
+    try {
+      const games = await fetchFitGirlGames(page);
+      
+      // Filter duplicates
+      const uniqueGames = games.filter(game => {
+        if (seenSlugs.has(game.slug)) {
+          return false;
+        }
+        seenSlugs.add(game.slug);
+        return true;
+      });
+      
+      allGames.push(...uniqueGames);
+      
+      if (page % 10 === 0) {
+        console.log(`Progress: ${page}/${totalPages} pages scraped...`);
+      }
+      
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 300));
+    } catch (error) {
+      console.error(`Error scraping page ${page}:`, error.message);
+    }
+  }
+  
+  console.log(`Scraping complete! Found ${allGames.length} unique games.`);
+  fitGirlCache = allGames;
+  return allGames;
 }
 
 async function getIgdbAccessToken() {
@@ -176,36 +238,37 @@ async function buildGamesData() {
   }
 
   fitGirlCache = null;
-  const slugsData = await fetchFitGirlSlugs();
+  const gamesData = await fetchAllFitGirlGames();
   const games = [];
-  for (const item of slugsData) {
-    const baseTitle =
-      item.spoilerTitle && item.spoilerTitle.trim().length
-        ? item.spoilerTitle.trim()
-        : item.slug.replace(/-/g, " ").replace(/\s+/g, " ").trim();
+  
+  for (const item of gamesData) {
     const existingGame = existingBySlug.get(item.slug);
+    
     if (existingGame) {
+      // Use existing data to preserve IGDB info
       games.push({
         id: item.slug,
         slug: item.slug,
-        title: baseTitle,
-        spoilerTitle: item.spoilerTitle,
+        title: item.title,
+        link: item.link,
         image: existingGame.image || null,
-        year:
-          typeof existingGame.year === "number" ? existingGame.year : null,
+        year: typeof existingGame.year === "number" ? existingGame.year : null,
       });
       continue;
     }
-    const igdbData = await fetchIgdbData(baseTitle);
+    
+    // Fetch IGDB data for new games
+    const igdbData = await fetchIgdbData(item.title);
     games.push({
       id: item.slug,
       slug: item.slug,
-      title: baseTitle,
-      spoilerTitle: item.spoilerTitle,
+      title: item.title,
+      link: item.link,
       image: igdbData.image,
       year: igdbData.year,
     });
   }
+  
   return games;
 }
 
@@ -265,7 +328,5 @@ app.get("/api/health", (req, res) => {
 
 app.listen(port, () => {
   console.log("Servidor escuchando en el puerto " + port);
-  fetchFitGirlSlugs().catch((error) => {
-    console.error("Error inicial al obtener la lista de juegos de FitGirl", error);
-  });
+  console.log("Note: First request may take a while as it scrapes all 127 pages");
 });

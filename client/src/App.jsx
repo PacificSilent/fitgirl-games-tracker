@@ -88,7 +88,7 @@ function App() {
           id: game.id,
           slug: game.slug,
           title: game.title,
-          spoilerTitle: game.spoilerTitle,
+          link: game.link,
           image: game.image,
           year: game.year,
           installed: false,
@@ -248,7 +248,7 @@ function App() {
                           {game.year ? game.year : "Unknown year"}
                         </p>
                         <a
-                          href={`https://fitgirl-repacks.site/${game.id}/`}
+                          href={game.link || `https://fitgirl-repacks.site/${game.slug}/`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="repack-link-button"
@@ -358,7 +358,7 @@ function App() {
                           {game.year ? game.year : "Unknown year"}
                         </p>
                         <a
-                          href={`https://fitgirl-repacks.site/${game.id}/`}
+                          href={game.link || `https://fitgirl-repacks.site/${game.slug}/`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="repack-link-button"
