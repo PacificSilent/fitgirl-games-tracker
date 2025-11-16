@@ -10,10 +10,10 @@ This project automatically fetches game repack information from FitGirl Repacks 
 
 - **Complete Game Library**: Automatically detects and scrapes all pages from FitGirl Repacks (6000+ games)
 - **Automated Web Scraping**: Extracts game titles, links, and metadata from FitGirl Repacks A-Z page
-- **IGDB Integration**: Enriches game data with cover art, release dates, and metadata from IGDB API
+- **Enhanced IGDB Integration**: Smart title cleaning and multiple search strategies for better cover art matching
 - **Smart Caching**: Preserves IGDB data to avoid re-fetching, updates only new games
 - **RESTful API**: Express-based backend with CORS support for flexible frontend integration
-- **Modern UI**: React-based frontend with Vite, featuring year filters and wishlist functionality
+- **Modern UI**: React-based frontend with immersive card design featuring full-cover backgrounds
 - **Persistent Storage**: JSON-based database for storing scraped game information
 - **Wishlist System**: Save favorite games with installation and completion tracking
 

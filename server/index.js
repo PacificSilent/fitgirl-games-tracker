@@ -167,6 +167,31 @@ async function getIgdbAccessToken() {
   }
 }
 
+function cleanGameTitle(title) {
+  // Remove common patterns to get cleaner game name
+  let cleaned = title;
+  
+  // Remove version numbers (v1.0, v2.3.1, etc.)
+  cleaned = cleaned.replace(/\s+v?\d+\.\d+(\.\d+)?(\.\d+)?/gi, '');
+  
+  // Remove "Repack" and similar terms
+  cleaned = cleaned.replace(/\s*-?\s*(repack|fitgirl|repacks?)\s*/gi, ' ');
+  
+  // Remove content in parentheses and brackets (usually versions, editions)
+  cleaned = cleaned.replace(/\s*[\(\[].*?[\)\]]/g, '');
+  
+  // Remove "Edition", "Complete", "GOTY", etc.
+  cleaned = cleaned.replace(/\s+(edition|complete|goty|deluxe|ultimate|enhanced|definitive|remastered|remake|hd|directors?\s+cut)/gi, '');
+  
+  // Remove plus signs and ampersands with spaces
+  cleaned = cleaned.replace(/\s*[\+\&]\s*/g, ' ');
+  
+  // Remove extra whitespace
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  
+  return cleaned;
+}
+
 async function fetchIgdbData(title) {
   if (!IGDB_CLIENT_ID || !IGDB_CLIENT_SECRET) {
     return { image: null, year: null };
@@ -175,39 +200,88 @@ async function fetchIgdbData(title) {
   if (igdbCache[cacheKey]) {
     return igdbCache[cacheKey];
   }
-  const safeTitle = title.replace(/"/g, "\\\"");
-  const query = `search "${safeTitle}"; fields name, first_release_date, cover.image_id; limit 1;`;
+  
+  // Clean the title for better search results
+  const cleanedTitle = cleanGameTitle(title);
+  const safeTitle = cleanedTitle.replace(/"/g, "\\\"");
+  
+  // Try multiple search strategies
+  const searchStrategies = [
+    // Strategy 1: Exact search with cleaned title
+    `search "${safeTitle}"; fields name, first_release_date, cover.image_id; limit 3;`,
+    // Strategy 2: Search by name field (more flexible)
+    `fields name, first_release_date, cover.image_id; where name ~ *"${safeTitle}"*; limit 3;`
+  ];
+  
   try {
     const accessToken = await getIgdbAccessToken();
     if (!accessToken) {
       return { image: null, year: null };
     }
-    const response = await axios.post(
-      "https://api.igdb.com/v4/games",
-      query,
-      {
-        headers: {
-          "Client-ID": IGDB_CLIENT_ID,
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "text/plain",
-          Accept: "application/json",
-        },
+    
+    let bestMatch = null;
+    
+    // Try each strategy until we find a match
+    for (const query of searchStrategies) {
+      try {
+        const response = await axios.post(
+          "https://api.igdb.com/v4/games",
+          query,
+          {
+            headers: {
+              "Client-ID": IGDB_CLIENT_ID,
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "text/plain",
+              Accept: "application/json",
+            },
+          }
+        );
+        
+        const results = Array.isArray(response.data) ? response.data : [];
+        
+        // Find best match by comparing cleaned names
+        for (const game of results) {
+          if (game.cover && game.cover.image_id) {
+            const gameName = cleanGameTitle(game.name || '').toLowerCase();
+            const searchName = cleanedTitle.toLowerCase();
+            
+            // Check if names match closely
+            if (gameName.includes(searchName) || searchName.includes(gameName)) {
+              bestMatch = game;
+              break;
+            }
+          }
+        }
+        
+        // If we found a match with cover, use it
+        if (bestMatch) break;
+        
+        // Otherwise, use first result with cover
+        if (!bestMatch && results.length > 0) {
+          bestMatch = results.find(g => g.cover && g.cover.image_id) || results[0];
+        }
+        
+        if (bestMatch) break;
+      } catch (strategyError) {
+        // Continue to next strategy
+        continue;
       }
-    );
-    const results = Array.isArray(response.data) ? response.data : [];
-    const game = results[0];
-    if (!game) {
-      return { image: null, year: null };
+    }
+    
+    if (!bestMatch) {
+      const result = { image: null, year: null };
+      igdbCache[cacheKey] = result;
+      return result;
     }
 
     let image = null;
-    if (game.cover && game.cover.image_id) {
-      image = `https://images.igdb.com/igdb/image/upload/t_cover_big/${game.cover.image_id}.jpg`;
+    if (bestMatch.cover && bestMatch.cover.image_id) {
+      image = `https://images.igdb.com/igdb/image/upload/t_cover_big/${bestMatch.cover.image_id}.jpg`;
     }
 
     let year = null;
-    if (game.first_release_date) {
-      const d = new Date(game.first_release_date * 1000);
+    if (bestMatch.first_release_date) {
+      const d = new Date(bestMatch.first_release_date * 1000);
       if (!isNaN(d.getTime())) {
         year = d.getFullYear();
       }
