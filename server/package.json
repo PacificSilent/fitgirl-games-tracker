@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "scrape": "node new-scraper.js"
+    "scrape": "node new-scraper.js",
+    "update": "node update-scraper.js"
   },
   "dependencies": {
     "axios": "^1.7.2",

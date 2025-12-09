@@ -90,6 +90,24 @@ npm run scrape
 
 This will automatically detect all pages, scrape them, and enrich with IGDB data (~15-30 minutes).
 
+### Quick Update - Check for New Games
+
+To quickly check for new games (much faster than full scrape):
+
+```bash
+cd server
+npm run update
+```
+
+This command:
+- Only checks the **first 5 pages** (where new games typically appear)
+- Compares with your existing database
+- Only processes and enriches new games with IGDB data
+- Updates your database with new entries
+- **Takes only ~1-2 minutes** instead of 15-30 minutes!
+
+💡 **Tip**: Run `npm run update` regularly to keep your database current without the long wait!
+
 See `server/SCRAPER-GUIDE.md` for detailed instructions.
 
 ### Development Mode
@@ -127,7 +145,8 @@ npm start
 **Server:**
 - `npm start` - Start the API server
 - `npm run dev` - Start with auto-reload
-- `npm run scrape` - Run complete scraper (auto-detects all pages)
+- `npm run scrape` - Run complete scraper (auto-detects all pages, ~15-30 min)
+- `npm run update` - Quick update: check first 5 pages for new games (~1-2 min)
 
 **Client:**
 - `npm run dev` - Start development server
@@ -154,6 +173,7 @@ fitgirl-games-tracker/
 ├── server/                    # Express backend
 │   ├── index.js              # Main API server
 │   ├── new-scraper.js        # Complete scraper (auto-detects pages)
+│   ├── update-scraper.js     # Quick update scraper (first 5 pages)
 │   ├── test-scraper.js       # Testing tool
 │   ├── db.json               # Game database (~6000 games)
 │   ├── SCRAPER-GUIDE.md      # Detailed scraper docs
