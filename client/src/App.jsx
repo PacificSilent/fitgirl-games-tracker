@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback, memo } from "react";
-import { ExternalLink, Heart } from "lucide-react";
+import { ExternalLink, Heart, Search, X } from "lucide-react";
 import { API_URL, DEFAULT_IMAGE } from "./config";
 
 const ITEMS_PER_PAGE = 200; // Número de juegos a cargar por vez (muy aumentado)
@@ -204,8 +204,21 @@ function App() {
   const [error, setError] = useState("");
   const [view, setView] = useState("games");
   const [yearFilter, setYearFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [displayedGamesCount, setDisplayedGamesCount] = useState(INITIAL_ITEMS);
   const [displayedWishlistCount, setDisplayedWishlistCount] = useState(INITIAL_ITEMS);
+
+  // Función para normalizar texto para búsqueda flexible
+  const normalizeText = useCallback((text) => {
+    if (!text) return "";
+    return text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // Remove accents
+      .replace(/[^a-z0-9\s]/g, " ") // Remove special characters
+      .replace(/\s+/g, " ") // Normalize spaces
+      .trim();
+  }, []);
 
   useEffect(() => {
     async function loadGames() {
@@ -250,13 +263,27 @@ function App() {
   }, [games]);
 
   const filteredGames = useMemo(() => {
-    if (yearFilter === "all") return games;
+    let filtered = games;
+
+    // Apply search filter (always search in ALL games)
+    if (searchQuery.trim()) {
+      const normalizedQuery = normalizeText(searchQuery);
+      filtered = filtered.filter((game) => {
+        const normalizedTitle = normalizeText(game.title);
+        return normalizedTitle.includes(normalizedQuery);
+      });
+      // When searching, ignore year filter - return all matching results
+      return filtered;
+    }
+
+    // Apply year filter only when NOT searching
+    if (yearFilter === "all") return filtered;
     if (yearFilter === "no-year") {
-      return games.filter((g) => !g.year);
+      return filtered.filter((g) => !g.year);
     }
     const numericYear = Number(yearFilter);
-    return games.filter((g) => g.year === numericYear);
-  }, [games, yearFilter]);
+    return filtered.filter((g) => g.year === numericYear);
+  }, [games, yearFilter, searchQuery, normalizeText]);
 
   const toggleWishlist = useCallback((game) => {
     setWishlist((prev) => {
@@ -346,10 +373,10 @@ function App() {
     };
   }, [view, displayedGamesCount, displayedWishlistCount, filteredGames.length, wishlist.length]);
 
-  // Reset counter cuando cambia el filtro o la vista
+  // Reset counter cuando cambia el filtro, la búsqueda o la vista
   useEffect(() => {
     setDisplayedGamesCount(INITIAL_ITEMS);
-  }, [yearFilter]);
+  }, [yearFilter, searchQuery]);
 
   useEffect(() => {
     if (view === "games") {
@@ -371,42 +398,32 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div>
-          <h1 className="app-title">FitGirl Games Tracker</h1>
-          <p className="app-subtitle">
-            Explore the latest FitGirl updates and mark your wishlist.
-          </p>
+        <h1 className="app-title">FitGirl Games Tracker</h1>
+        
+        <div className="header-controls">
+          <nav className="app-nav">
+            <button
+              type="button"
+              className={
+                view === "games" ? "nav-button nav-button-active" : "nav-button"
+              }
+              onClick={() => setView("games")}
+            >
+              Games
+              <span className="nav-badge">{games.length}</span>
+            </button>
+            <button
+              type="button"
+              className={
+                view === "wishlist" ? "nav-button nav-button-active" : "nav-button"
+              }
+              onClick={() => setView("wishlist")}
+            >
+              Wishlist
+              <span className="nav-badge">{wishlist.length}</span>
+            </button>
+          </nav>
         </div>
-        <div className="app-badges">
-          <span className="badge badge-soft">
-            Games loaded
-            <strong>{games.length}</strong>
-          </span>
-          <span className="badge badge-accent">
-            Wishlist
-            <strong>{wishlist.length}</strong>
-          </span>
-        </div>
-        <nav className="app-nav">
-          <button
-            type="button"
-            className={
-              view === "games" ? "nav-button nav-button-active" : "nav-button"
-            }
-            onClick={() => setView("games")}
-          >
-            Games
-          </button>
-          <button
-            type="button"
-            className={
-              view === "wishlist" ? "nav-button nav-button-active" : "nav-button"
-            }
-            onClick={() => setView("wishlist")}
-          >
-            Wishlist
-          </button>
-        </nav>
       </header>
 
       {loading && (
@@ -426,49 +443,77 @@ function App() {
         <>
           {view === "games" && (
             <section className="section">
-              <div className="section-header">
-                <h2 className="section-title">Games list</h2>
-              </div>
-              {yearOptions.years.length > 0 && (
-                <div className="year-filters">
-                  <button
-                    type="button"
-                    className={
-                      yearFilter === "all"
-                        ? "year-filter-button year-filter-button-active"
-                        : "year-filter-button"
-                    }
-                    onClick={() => setYearFilter("all")}
-                  >
-                    All
-                  </button>
-                  {yearOptions.years.map((year) => (
+              {/* Search bar */}
+              <div className="search-container">
+                <div className="search-input-wrapper">
+                  <Search className="search-icon" size={18} />
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search games by title..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  {searchQuery && (
                     <button
-                      key={year}
-                      type="button"
-                      className={
-                        yearFilter === String(year)
-                          ? "year-filter-button year-filter-button-active"
-                          : "year-filter-button"
-                      }
-                      onClick={() => setYearFilter(String(year))}
+                      className="search-clear-button"
+                      onClick={() => setSearchQuery("")}
+                      aria-label="Clear search"
                     >
-                      {year}
-                    </button>
-                  ))}
-                  {yearOptions.hasNoYear && (
-                    <button
-                      type="button"
-                      className={
-                        yearFilter === "no-year"
-                          ? "year-filter-button year-filter-button-active"
-                          : "year-filter-button"
-                      }
-                      onClick={() => setYearFilter("no-year")}
-                    >
-                      No year
+                      <X size={16} />
                     </button>
                   )}
+                </div>
+                {searchQuery && (
+                  <div className="search-results-info">
+                    {filteredGames.length} game{filteredGames.length !== 1 ? 's' : ''} found
+                  </div>
+                )}
+              </div>
+              
+              {/* Year filters carousel */}
+              {yearOptions.years.length > 0 && (
+                <div className="year-filters-container">
+                  <div className="year-filters-carousel">
+                    <button
+                      type="button"
+                      className={
+                        yearFilter === "all"
+                          ? "year-filter-button year-filter-button-active"
+                          : "year-filter-button"
+                      }
+                      onClick={() => setYearFilter("all")}
+                    >
+                      All
+                    </button>
+                    {yearOptions.years.map((year) => (
+                      <button
+                        key={year}
+                        type="button"
+                        className={
+                          yearFilter === String(year)
+                            ? "year-filter-button year-filter-button-active"
+                            : "year-filter-button"
+                        }
+                        onClick={() => setYearFilter(String(year))}
+                      >
+                        {year}
+                      </button>
+                    ))}
+                    {yearOptions.hasNoYear && (
+                      <button
+                        type="button"
+                        className={
+                          yearFilter === "no-year"
+                            ? "year-filter-button year-filter-button-active"
+                            : "year-filter-button"
+                        }
+                        onClick={() => setYearFilter("no-year")}
+                      >
+                        No year
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
               <div className="grid">
@@ -498,71 +543,22 @@ function App() {
                   ✓ All {filteredGames.length} games loaded
                 </div>
               )}
-              
-              {yearOptions.years.length > 0 && (
-                <div className="year-filters" style={{ marginTop: "2rem" }}>
-                  <button
-                    type="button"
-                    className={
-                      yearFilter === "all"
-                        ? "year-filter-button year-filter-button-active"
-                        : "year-filter-button"
-                    }
-                    onClick={() => setYearFilter("all")}
-                  >
-                    All
-                  </button>
-                  {yearOptions.years.map((year) => (
-                    <button
-                      key={year}
-                      type="button"
-                      className={
-                        yearFilter === String(year)
-                          ? "year-filter-button year-filter-button-active"
-                          : "year-filter-button"
-                      }
-                      onClick={() => setYearFilter(String(year))}
-                    >
-                      {year}
-                    </button>
-                  ))}
-                  {yearOptions.hasNoYear && (
-                    <button
-                      type="button"
-                      className={
-                        yearFilter === "no-year"
-                          ? "year-filter-button year-filter-button-active"
-                          : "year-filter-button"
-                      }
-                      onClick={() => setYearFilter("no-year")}
-                    >
-                      No year
-                    </button>
-                  )}
-                </div>
-              )}
             </section>
           )}
 
           {view === "wishlist" && (
             <section className="section section-wishlist">
-              <div className="section-header section-header-with-actions">
-                <div>
-                  <h2 className="section-title">My wishlist</h2>
-                  <p className="section-subtitle">
-                    Your list of games marked.
-                  </p>
-                </div>
-                {wishlist.length > 0 && (
+              {wishlist.length > 0 && (
+                <div className="wishlist-controls">
                   <button
                     type="button"
                     className="clear-wishlist-button"
                     onClick={clearWishlist}
                   >
-                    Clear wishlist
+                    Clear all
                   </button>
-                )}
-              </div>
+                </div>
+              )}
               {wishlist.length === 0 && (
                 <div className="status status-empty">
                   <span>

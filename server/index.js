@@ -16,7 +16,6 @@ let igdbAccessToken = null;
 let igdbTokenExpiresAt = 0;
 const DB_PATH = path.join(__dirname, "db.json");
 let gamesCache = null;
-let gamesCacheDate = null;
 
 app.use(cors());
 app.use(express.json());
@@ -347,36 +346,26 @@ async function buildGamesData() {
 }
 
 async function getGames() {
-  const now = new Date();
-  const todayKey = now.toISOString().slice(0, 10);
-  if (gamesCache && gamesCacheDate === todayKey) {
+  // Si ya tenemos caché en memoria, retornarlo
+  if (gamesCache) {
     return gamesCache;
   }
 
+  // Intentar cargar de db.json primero
   try {
-    const stats = await fs.promises.stat(DB_PATH);
-    const fileDate = stats.mtime;
-    const fileKey = fileDate.toISOString().slice(0, 10);
-    if (fileKey === todayKey) {
-      const fileContent = await fs.promises.readFile(DB_PATH, "utf-8");
-      const parsed = JSON.parse(fileContent);
-      if (Array.isArray(parsed)) {
-        gamesCache = parsed;
-        gamesCacheDate = todayKey;
-        return gamesCache;
-      }
+    const fileContent = await fs.promises.readFile(DB_PATH, "utf-8");
+    const parsed = JSON.parse(fileContent);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      console.log(`\u2713 Loaded ${parsed.length} games from database`);
+      gamesCache = parsed;
+      return gamesCache;
     }
   } catch (error) {
+    console.log("⚠️  No database found. Please run 'npm run scrape' to build the database.");
   }
 
-  const games = await buildGamesData();
-  gamesCache = games;
-  gamesCacheDate = todayKey;
-  try {
-    await fs.promises.writeFile(DB_PATH, JSON.stringify(games, null, 2));
-  } catch (error) {
-  }
-  return games;
+  // Si no existe db.json, retornar array vacío y sugerir ejecutar el scraper
+  return [];
 }
 
 app.get("/api/games", async (req, res) => {
@@ -401,6 +390,21 @@ app.get("/api/health", (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log("Servidor escuchando en el puerto " + port);
-  console.log("Note: First request may take a while as it scrapes all 127 pages");
+  console.log("\n🚀 Servidor escuchando en el puerto " + port);
+  console.log("💾 Database: " + DB_PATH);
+  
+  // Verificar si existe la base de datos
+  try {
+    if (fs.existsSync(DB_PATH)) {
+      const stats = fs.statSync(DB_PATH);
+      const fileSize = (stats.size / 1024 / 1024).toFixed(2);
+      console.log("✓ Database found (" + fileSize + " MB)");
+    } else {
+      console.log("⚠️  No database found!");
+      console.log("🛠️  Run 'npm run scrape' to build the complete database");
+      console.log("🛠️  Or run 'npm run update' to fetch new games only\n");
+    }
+  } catch (error) {
+    console.log("⚠️  Error checking database");
+  }
 });
